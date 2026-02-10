@@ -33,8 +33,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "bddl3"))
 
 # 기본 로봇 설정 (공통)
 BASE_ROBOT_CFG = {
-    "model": "R1Pro",
-    "obs_modalities": ["rgb"],
+    "model": "r1pro",
+    "obs_modalities": [],
     "action_type": "continuous",
     "action_normalize": True,
     "grasping_mode": "physical",
@@ -67,12 +67,10 @@ EXPERIMENT_1_IK = {
         },
         "arm_left": {
             "name": "InverseKinematicsController",
-            "motor_type": "position",
             "pos_kp": 150,
         },
         "arm_right": {
             "name": "InverseKinematicsController",
-            "motor_type": "position",
             "pos_kp": 150,
         },
         "gripper_left": {
@@ -285,14 +283,69 @@ def analyze_experiments():
 # 시뮬레이션 모드
 # ============================================================
 
-def run_simulation_experiment(exp_config: dict, steps: int = 200):
+def setup_viewport():
+    """RENDER_VIEWER_CAMERA=False로 숨겨진 Viewport를 복원하고 카메라를 설정합니다."""
+    from pxr import UsdGeom, Gf
+    import carb
+    import omni.usd
+    import omni.ui
+    import omni.kit.viewport.window
+    import omni.kit.app
+
+    # Viewport 창 다시 표시
+    vp_win = omni.ui.Workspace.get_window("Viewport")
+    if vp_win is not None:
+        vp_win.visible = True
+        omni.kit.app.get_app().update()
+
+    # 고품질 렌더링
+    s = carb.settings.get_settings()
+    s.set_bool("/rtx/reflections/enabled", True)
+    s.set_bool("/rtx/indirectDiffuse/enabled", True)
+    s.set_bool("/rtx/ambientOcclusion/enabled", True)
+    s.set_bool("/rtx/directLighting/sampledLighting/enabled", True)
+    s.set_bool("/rtx/shadows/enabled", True)
+    s.set_bool("/rtx/flow/enabled", True)
+    s.set_bool("/rtx/translucency/enabled", True)
+    s.set_bool("/rtx/post/aa/enabled", True)
+    s.set_bool("/rtx/post/tonemap/enabled", True)
+    s.set_bool("/rtx/post/denoiser/enabled", True)
+    s.set_bool("/app/renderer/skipMaterialLoading", False)
+
+    # RTX-Interactive (Path Tracing) 모드
+    s.set_string("/rtx/rendermode", "PathTracing")
+    s.set_int("/rtx/pathtracing/spp", 1)
+    s.set_int("/rtx/pathtracing/totalSpp", 64)
+    s.set_int("/rtx/pathtracing/maxBounces", 4)
+    s.set_int("/rtx/pathtracing/maxSpecularAndTransmissionBounces", 4)
+
+    # 카메라 생성 및 뷰포트 연결
+    stage = omni.usd.get_context().get_stage()
+    cam_path = "/World/viewport_camera"
+    if not stage.GetPrimAtPath(cam_path).IsValid():
+        UsdGeom.Camera.Define(stage, cam_path)
+    prim = stage.GetPrimAtPath(cam_path)
+    xf = UsdGeom.Xformable(prim)
+    xf.ClearXformOpOrder()
+    xf.AddTranslateOp().Set(Gf.Vec3d(-0.2, -2.7, 1.1))
+    xf.AddOrientOp().Set(Gf.Quatf(0.73138017, 0.68196617, -0.00155408, -0.00166678))
+    UsdGeom.Camera(prim).GetClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+    UsdGeom.Camera(prim).GetFocalLengthAttr().Set(17.0)
+
+    vps = list(omni.kit.viewport.window.get_viewport_window_instances())
+    if vps:
+        vps[0].viewport_api.set_active_camera(cam_path)
+    print("  뷰포트 카메라 설정 완료")
+
+
+def run_simulation_experiment(exp_config: dict, steps: int = 3000):
     """하나의 실험 설정으로 시뮬레이션을 실행합니다."""
     import torch as th
-    import omnigibson as og
     from omnigibson.macros import gm
-
     gm.USE_GPU_DYNAMICS = False
     gm.ENABLE_FLATCACHE = True
+    gm.RENDER_VIEWER_CAMERA = False
+    import omnigibson as og
 
     print(f"\n{'='*70}")
     print(f"  시뮬레이션: {exp_config['name']}")
@@ -303,12 +356,15 @@ def run_simulation_experiment(exp_config: dict, steps: int = 200):
     robot_cfg["controller_config"] = exp_config["controller_config"]
 
     cfg = {
-        "scene": {"type": "Scene"},  # 빈 장면 (빠른 로딩)
+        "scene": {"type": "Scene"},
         "robots": [robot_cfg],
     }
 
     env = og.Environment(configs=cfg)
     robot = env.robots[0]
+
+    # Viewport 복원 + 카메라 설정
+    setup_viewport()
 
     # 로봇 정보 출력
     print(f"\n  로봇 모델:       {robot.model}")

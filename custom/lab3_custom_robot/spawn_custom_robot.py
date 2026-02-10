@@ -112,15 +112,67 @@ def unregister_robot():
     print(f"  제거 완료: {TARGET_YAML}")
 
 
+def setup_viewport():
+    """RENDER_VIEWER_CAMERA=False로 숨겨진 Viewport를 복원하고 카메라를 설정합니다."""
+    from pxr import UsdGeom, Gf
+    import carb
+    import omni.usd
+    import omni.ui
+    import omni.kit.viewport.window
+    import omni.kit.app
+
+    vp_win = omni.ui.Workspace.get_window("Viewport")
+    if vp_win is not None:
+        vp_win.visible = True
+        omni.kit.app.get_app().update()
+
+    s = carb.settings.get_settings()
+    s.set_bool("/rtx/reflections/enabled", True)
+    s.set_bool("/rtx/indirectDiffuse/enabled", True)
+    s.set_bool("/rtx/ambientOcclusion/enabled", True)
+    s.set_bool("/rtx/directLighting/sampledLighting/enabled", True)
+    s.set_bool("/rtx/shadows/enabled", True)
+    s.set_bool("/rtx/flow/enabled", True)
+    s.set_bool("/rtx/translucency/enabled", True)
+    s.set_bool("/rtx/post/aa/enabled", True)
+    s.set_bool("/rtx/post/tonemap/enabled", True)
+    s.set_bool("/rtx/post/denoiser/enabled", True)
+    s.set_bool("/app/renderer/skipMaterialLoading", False)
+
+    # RTX-Interactive (Path Tracing) 모드
+    s.set_string("/rtx/rendermode", "PathTracing")
+    s.set_int("/rtx/pathtracing/spp", 1)
+    s.set_int("/rtx/pathtracing/totalSpp", 64)
+    s.set_int("/rtx/pathtracing/maxBounces", 4)
+    s.set_int("/rtx/pathtracing/maxSpecularAndTransmissionBounces", 4)
+
+    stage = omni.usd.get_context().get_stage()
+    cam_path = "/World/viewport_camera"
+    if not stage.GetPrimAtPath(cam_path).IsValid():
+        UsdGeom.Camera.Define(stage, cam_path)
+    prim = stage.GetPrimAtPath(cam_path)
+    xf = UsdGeom.Xformable(prim)
+    xf.ClearXformOpOrder()
+    xf.AddTranslateOp().Set(Gf.Vec3d(-0.2, -2.7, 1.1))
+    xf.AddOrientOp().Set(Gf.Quatf(0.73138017, 0.68196617, -0.00155408, -0.00166678))
+    UsdGeom.Camera(prim).GetClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+    UsdGeom.Camera(prim).GetFocalLengthAttr().Set(17.0)
+
+    vps = list(omni.kit.viewport.window.get_viewport_window_instances())
+    if vps:
+        vps[0].viewport_api.set_active_camera(cam_path)
+    print("  뷰포트 카메라 설정 완료")
+
+
 def run_simulation():
     """커스텀 로봇을 시뮬레이션에서 스폰합니다."""
     import torch as th
-    import omnigibson as og
     from omnigibson.macros import gm
-    from omnigibson.robots import REGISTERED_ROBOTS
-
     gm.USE_GPU_DYNAMICS = False
     gm.ENABLE_FLATCACHE = True
+    gm.RENDER_VIEWER_CAMERA = False
+    import omnigibson as og
+    from omnigibson.robots import REGISTERED_ROBOTS
 
     # 등록 확인
     print(f"\n  등록된 로봇: {REGISTERED_ROBOTS}")
@@ -134,7 +186,7 @@ def run_simulation():
         "robots": [
             {
                 "model": "r1pro_custom",
-                "obs_modalities": ["rgb"],
+                "obs_modalities": [],
                 "action_type": "continuous",
                 "action_normalize": True,
                 "grasping_mode": "physical",
@@ -153,6 +205,9 @@ def run_simulation():
 
     env = og.Environment(configs=cfg)
     robot = env.robots[0]
+
+    # Viewport 복원 + 카메라 설정
+    setup_viewport()
 
     # 로봇 정보 출력
     print(f"\n{'='*70}")
@@ -176,12 +231,16 @@ def run_simulation():
     joint_pos = robot.get_joint_positions()
     print(f"  현재 조인트 위치 (처음 12개): {joint_pos[:12].tolist()}")
 
-    # 100스텝 실행
-    print("\n  100 스텝 랜덤 액션 실행 중...")
-    for step in range(100):
+    # 3000스텝 실행
+    print("\n  3000 스텝 랜덤 액션 실행 중...")
+    for step in range(3000):
         if step % 30 == 0:
             action = robot.action_space.sample() * 0.03
         env.step(action=action)
+
+        if step % 500 == 0:
+            joint_pos = robot.get_joint_positions()
+            print(f"    Step {step:4d} | joints[0:6]={[f'{v:.3f}' for v in joint_pos[:6].tolist()]}")
 
     print("  시뮬레이션 완료!")
     og.shutdown()

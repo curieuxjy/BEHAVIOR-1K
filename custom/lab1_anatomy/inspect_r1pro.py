@@ -196,19 +196,184 @@ def list_all_robots():
     return robots
 
 
+def set_high_quality_render():
+    """OmniGibson 기본 렌더링 설정을 복원합니다 (고품질)."""
+    import carb
+
+    s = carb.settings.get_settings()
+
+    s.set_bool("/rtx/reflections/enabled", True)
+    s.set_bool("/rtx/indirectDiffuse/enabled", True)
+    s.set_bool("/rtx/ambientOcclusion/enabled", True)
+    s.set_bool("/rtx/directLighting/sampledLighting/enabled", True)
+    s.set_bool("/rtx/flow/enabled", True)
+    s.set_bool("/rtx/translucency/enabled", True)
+    s.set_bool("/rtx/shadows/enabled", True)
+    s.set_int("/rtx/post/dlss/execMode", 0)
+    s.set_bool("/rtx/post/aa/enabled", True)
+    s.set_bool("/rtx/post/tonemap/enabled", True)
+    s.set_bool("/rtx/post/denoiser/enabled", True)
+    s.set_bool("/app/renderer/skipMaterialLoading", False)
+    s.set_int("/rtx/raytracing/showLights", 1)
+    s.set_float("/rtx/sceneDb/ambientLightIntensity", 1.0)
+
+    # RTX-Interactive (Path Tracing) 모드로 설정
+    s.set_string("/rtx/rendermode", "PathTracing")
+    s.set_int("/rtx/pathtracing/spp", 1)
+    s.set_int("/rtx/pathtracing/totalSpp", 64)
+    s.set_int("/rtx/pathtracing/maxBounces", 4)
+    s.set_int("/rtx/pathtracing/maxSpecularAndTransmissionBounces", 4)
+
+    print("  렌더링: RTX-Interactive (Path Tracing)")
+
+
+def setup_viewport_camera(position, orientation):
+    """RENDER_VIEWER_CAMERA=False 상태에서 뷰포트 카메라를 직접 설정합니다.
+
+    VisionSensor annotator가 Blackwell GPU에서 크래시하므로,
+    USD Camera prim을 직접 생성하고 뷰포트에 연결합니다.
+    또한 RENDER_VIEWER_CAMERA=False로 숨겨진 Viewport 창을 다시 표시합니다.
+
+    Args:
+        position: (x, y, z) 카메라 위치
+        orientation: (x, y, z, w) 쿼터니언 (OmniGibson 규약)
+    """
+    from pxr import UsdGeom, Gf
+    import omni.usd
+    import omni.ui
+    import omni.kit.viewport.window
+    import omni.kit.app
+
+    # 1) RENDER_VIEWER_CAMERA=False가 숨긴 Viewport 창을 다시 표시
+    viewport_win = omni.ui.Workspace.get_window("Viewport")
+    if viewport_win is not None:
+        viewport_win.visible = True
+        omni.kit.app.get_app().update()
+        print("  Viewport 창 표시 완료")
+
+    # 2) 렌더링 품질 설정
+    set_high_quality_render()
+
+    # 3) 뷰포트 해상도
+    viewport_instances = list(omni.kit.viewport.window.get_viewport_window_instances())
+
+    # 4) USD Camera prim 생성
+    stage = omni.usd.get_context().get_stage()
+    cam_path = "/World/viewport_camera"
+
+    if not stage.GetPrimAtPath(cam_path).IsValid():
+        UsdGeom.Camera.Define(stage, cam_path)
+
+    prim = stage.GetPrimAtPath(cam_path)
+    xformable = UsdGeom.Xformable(prim)
+
+    xformable.ClearXformOpOrder()
+    xformable.AddTranslateOp().Set(Gf.Vec3d(*position))
+
+    # OmniGibson 쿼터니언 (x,y,z,w) -> USD 쿼터니언 (w,x,y,z)
+    qx, qy, qz, qw = orientation
+    xformable.AddOrientOp().Set(Gf.Quatf(qw, qx, qy, qz))
+
+    # 클리핑 및 초점 거리 설정
+    cam = UsdGeom.Camera(prim)
+    cam.GetClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+    cam.GetFocalLengthAttr().Set(17.0)
+
+    # 5) 이 카메라를 뷰포트의 활성 카메라로 설정
+    try:
+        if viewport_instances:
+            viewport_instances[0].viewport_api.set_active_camera(cam_path)
+            print(f"  뷰포트 카메라 설정 완료: {cam_path}")
+    except Exception as e:
+        print(f"  뷰포트 카메라 설정 실패 (수동으로 뷰 조정 필요): {e}")
+
+
+def run_visual(model_name: str = "r1pro", steps: int = 300):
+    """시뮬레이션 창을 띄워 로봇을 시각적으로 확인합니다."""
+    import torch as th
+    from omnigibson.macros import gm
+    gm.USE_GPU_DYNAMICS = False
+    gm.ENABLE_FLATCACHE = True
+    gm.RENDER_VIEWER_CAMERA = False  # VisionSensor annotator 우회
+    import omnigibson as og
+
+    print_section(f"{model_name} 시뮬레이션 시각 확인")
+
+    cfg = {
+        "scene": {"type": "Scene"},
+        "robots": [
+            {
+                "model": model_name,
+                "obs_modalities": [],
+                "action_type": "continuous",
+                "action_normalize": True,
+                "grasping_mode": "physical",
+                "default_reset_mode": "untuck",
+            }
+        ],
+    }
+
+    env = og.Environment(configs=cfg)
+    robot = env.robots[0]
+
+    # 뷰포트 카메라를 로봇 앞에 위치시킴
+    # 기본 위치: 로봇에서 약 3m 떨어져 비스듬히 내려다보는 각도
+    setup_viewport_camera(
+        position=(-0.2, -2.7, 1.1),
+        orientation=(0.68196617, -0.00155408, -0.00166678, 0.73138017),
+    )
+
+    print(f"  모델:          {robot.model}")
+    print(f"  Action dim:    {robot.action_dim}")
+    print(f"  컨트롤러:")
+    for name in robot.controller_order:
+        ctrl = robot.controllers[name]
+        print(f"    {name:16s} -> {ctrl.__class__.__name__} (dim={ctrl.command_dim})")
+
+    env.reset()
+    robot.reset()
+
+    print(f"\n  {steps} 스텝 실행 중... (Viewport 창에서 로봇을 확인하세요)")
+    print(f"  창을 닫거나 Ctrl+C로 종료합니다.\n")
+
+    for step in range(steps):
+        if step % 30 == 0:
+            action = robot.action_space.sample() * 0.05
+        env.step(action=action)
+
+        if step % 50 == 0:
+            joint_pos = robot.get_joint_positions()
+            print(f"  Step {step:3d} | joints[0:6]={[f'{v:.3f}' for v in joint_pos[:6].tolist()]}")
+
+    print("\n  시뮬레이션 완료!")
+    og.shutdown()
+
+
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  Lab 1: R1Pro 로봇 구조 분석")
-    print("=" * 60)
+    import argparse
 
-    # 모든 로봇 나열
-    list_all_robots()
+    parser = argparse.ArgumentParser(description="Lab 1: R1Pro 로봇 구조 분석")
+    parser.add_argument("--visual", action="store_true", help="시뮬레이션 창을 띄워 로봇 확인")
+    parser.add_argument("--model", type=str, default="r1pro", help="시각화할 로봇 모델 (기본: r1pro)")
+    parser.add_argument("--steps", type=int, default=3000, help="시뮬레이션 스텝 수 (기본: 3000)")
+    args = parser.parse_args()
 
-    # R1Pro 상세 분석
-    r1pro_def = load_robot_definition("r1pro")
-    inspect_robot("R1Pro", r1pro_def)
+    if args.visual:
+        # YAML 분석 출력 후 시뮬레이션 실행
+        r1pro_def = load_robot_definition(args.model)
+        inspect_robot(args.model, r1pro_def)
+        run_visual(model_name=args.model, steps=args.steps)
+    else:
+        print("=" * 60)
+        print("  Lab 1: R1Pro 로봇 구조 분석")
+        print("=" * 60)
 
-    # R1 vs R1Pro 비교
-    compare_r1_r1pro()
+        list_all_robots()
 
-    print("\n\nLab 1 완료!")
+        r1pro_def = load_robot_definition("r1pro")
+        inspect_robot("R1Pro", r1pro_def)
+
+        compare_r1_r1pro()
+
+        print("\n\nLab 1 완료!")
+        print("시뮬레이션 창으로 보려면: python custom/lab1_anatomy/inspect_r1pro.py --visual")

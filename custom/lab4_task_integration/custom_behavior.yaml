@@ -14,17 +14,7 @@ env:
   flatten_obs_space: false
   use_external_obs: false
   initial_pos_z_offset: 0.1
-  external_sensors:
-    - sensor_type: VisionSensor
-      name: external_sensor0
-      relative_prim_path: /external_sensor0
-      modalities: [rgb, depth]
-      sensor_kwargs:
-        image_height: 128
-        image_width: 128
-      position: [0, 0, 1.0]
-      orientation: [0.707, 0.0, 0.0, 0.707]
-      pose_frame: parent
+  external_sensors: null
 
 render:
   viewer_width: 1280
@@ -48,7 +38,7 @@ scene:
 robots:
   # CUSTOM: r1pro_custom 모델 사용 (Lab 3에서 등록한 로봇)
   - type: r1pro_custom
-    obs_modalities: [rgb, depth]
+    obs_modalities: []
     include_sensor_names: null
     exclude_sensor_names: null
     scale: 1.0
