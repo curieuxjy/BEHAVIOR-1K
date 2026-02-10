@@ -1,0 +1,126 @@
+# =============================================================
+# Lab 4: 커스텀 R1Pro로 BehaviorTask 수행
+# =============================================================
+# r1pro_custom 로봇으로 picking_up_trash 태스크를 수행하는 설정입니다.
+# 원본 r1pro_behavior.yaml을 기반으로 커스텀 로봇 + 조정된 설정을 사용합니다.
+#
+# 커스터마이징 포인트에 "# CUSTOM:" 주석을 달았습니다.
+# =============================================================
+
+env:
+  device: null
+  automatic_reset: false
+  flatten_action_space: false
+  flatten_obs_space: false
+  use_external_obs: false
+  initial_pos_z_offset: 0.1
+  external_sensors:
+    - sensor_type: VisionSensor
+      name: external_sensor0
+      relative_prim_path: /external_sensor0
+      modalities: [rgb, depth]
+      sensor_kwargs:
+        image_height: 128
+        image_width: 128
+      position: [0, 0, 1.0]
+      orientation: [0.707, 0.0, 0.0, 0.707]
+      pose_frame: parent
+
+render:
+  viewer_width: 1280
+  viewer_height: 720
+
+scene:
+  type: InteractiveTraversableScene
+  scene_model: house_double_floor_lower
+  trav_map_resolution: 0.1
+  default_erosion_radius: 0.0
+  trav_map_with_objects: true
+  num_waypoints: 1
+  waypoint_resolution: 0.2
+  not_load_object_categories: null
+  load_room_types: ["living_room", "kitchen"]
+  load_room_instances: null
+  seg_map_resolution: 1.0
+  scene_source: OG
+  include_robots: true
+
+robots:
+  # CUSTOM: r1pro_custom 모델 사용 (Lab 3에서 등록한 로봇)
+  - type: r1pro_custom
+    obs_modalities: [rgb, depth]
+    include_sensor_names: null
+    exclude_sensor_names: null
+    scale: 1.0
+    self_collision: false
+    action_normalize: true
+    action_type: continuous
+    # CUSTOM: assisted 그래스핑 (물체 잡기 더 쉬움)
+    grasping_mode: assisted
+    default_reset_mode: untuck
+    sensor_config:
+      VisionSensor:
+        sensor_kwargs:
+          image_height: 128
+          image_width: 128
+    controller_config:
+      base:
+        name: HolonomicBaseJointController
+        motor_type: velocity
+        vel_kp: 150
+        command_input_limits: default
+        command_output_limits: default
+        use_impedances: false
+      trunk:
+        name: JointController
+        motor_type: position
+        pos_kp: 150
+        command_input_limits: default
+        command_output_limits: default
+        use_impedances: false
+        use_delta_commands: false
+      # CUSTOM: 팔을 JointController로 (r1pro_custom.yaml 기본값과 일치)
+      arm_left:
+        name: JointController
+        motor_type: position
+        pos_kp: 150
+        command_input_limits: default
+        command_output_limits: default
+        use_impedances: false
+        use_delta_commands: false
+      arm_right:
+        name: JointController
+        motor_type: position
+        pos_kp: 150
+        command_input_limits: default
+        command_output_limits: default
+        use_impedances: false
+        use_delta_commands: false
+      gripper_left:
+        name: MultiFingerGripperController
+        mode: smooth
+        command_input_limits: default
+        command_output_limits: default
+      gripper_right:
+        name: MultiFingerGripperController
+        mode: smooth
+        command_input_limits: default
+        command_output_limits: default
+
+objects: []
+
+task:
+  type: BehaviorTask
+  activity_name: picking_up_trash
+  activity_definition_id: 0
+  activity_instance_id: 0
+  predefined_problem: null
+  online_object_sampling: false
+  debug_object_sampling: null
+  highlight_task_relevant_objects: false
+  use_presampled_robot_pose: true
+  termination_config:
+    # CUSTOM: 스텝 수 늘림 (탐색 시간 확보)
+    max_steps: 1000
+  reward_config:
+    r_potential: 1.0

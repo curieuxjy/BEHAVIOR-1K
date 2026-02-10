@@ -1,0 +1,97 @@
+# =============================================================
+# Lab 3: 커스텀 R1Pro 로봇 정의
+# =============================================================
+# r1pro.yaml을 기반으로 수정한 커스텀 버전입니다.
+# 이 파일을 OmniGibson/omnigibson/robots/definitions/ 에 복사하면
+# "r1pro_custom" 이름으로 자동 등록됩니다.
+#
+# 커스터마이징 포인트:
+#   1. 컨트롤러 기본값 변경 (IK -> Joint)
+#   2. 속도 게인 조정
+#   3. 작업 공간 범위 확장
+#   4. Tuck/Untuck 포즈 수정
+# =============================================================
+
+# --- 컨트롤러 순서: action 벡터에서의 차원 배치 순서 ---
+raw_controller_order: ["base", "trunk", "arm_left", "gripper_left", "arm_right", "gripper_right"]
+
+# --- 기본 컨트롤러 (커스터마이징: 팔을 JointController로 변경) ---
+# 원본 R1Pro는 IK를 기본으로 사용하지만, 여기서는 Joint 직접 제어로 변경
+default_controllers:
+  base: HolonomicBaseJointController
+  trunk: JointController
+  arm_left: JointController          # 변경: IK -> Joint
+  arm_right: JointController         # 변경: IK -> Joint
+  gripper_left: MultiFingerGripperController
+  gripper_right: MultiFingerGripperController
+
+# --- Primitives 속도 게인 (커스터마이징: 속도 증가) ---
+linear_velocity_gain_for_primitives: 0.5    # 원본: 0.3
+angular_velocity_gain_for_primitives: 0.3   # 원본: 0.2
+
+# --- 충돌 비활성화 쌍 (원본과 동일) ---
+disabled_collision_pairs:
+  - ["left_arm_link1", "torso_link4"]
+  - ["left_arm_link2", "torso_link4"]
+  - ["right_arm_link1", "torso_link4"]
+  - ["right_arm_link2", "torso_link4"]
+  - ["left_arm_link5", "left_arm_link7"]
+  - ["right_arm_link5", "right_arm_link7"]
+  - ["left_gripper_finger_link1", "left_realsense_link"]
+  - ["right_gripper_finger_link1", "right_realsense_link"]
+  - ["left_gripper_finger_link1", "left_gripper_finger_link2"]
+  - ["right_gripper_finger_link1", "right_gripper_finger_link2"]
+  - ["base_link", "wheel_motor_link1"]
+  - ["base_link", "wheel_motor_link2"]
+  - ["base_link", "wheel_motor_link3"]
+  - ["torso_link2", "torso_link4"]
+
+base_footprint_link_name: "base_link"
+
+# --- Holonomic Base ---
+holonomic_base:
+  force_sphere_wheel_approximation: true
+
+# --- Locomotion ---
+locomotion:
+  base_joint_names: ["base_footprint_x_joint", "base_footprint_y_joint", "base_footprint_rz_joint"]
+  floor_touching_base_link_names: ["wheel_motor_link1", "wheel_motor_link2", "wheel_motor_link3"]
+
+# --- Trunk ---
+articulated_trunk:
+  trunk_link_names: ["torso_link1", "torso_link2", "torso_link3", "torso_link4"]
+  trunk_joint_names: ["torso_joint1", "torso_joint2", "torso_joint3", "torso_joint4"]
+
+# --- Mobile Manipulation (커스터마이징: untucked 포즈 수정) ---
+# 팔을 더 앞으로 뻗은 "준비" 자세로 변경
+mobile_manipulation:
+  tucked_default_joint_pos: [0.0000041812, 0.0000053010, 0.0050834, -0.0010323, 0.00077872, 0.00000028413, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.05, 0.05, 0.05]
+  # 커스텀 untucked: 팔을 약간 더 벌린 자세
+  untucked_default_joint_pos: [0.0000041812, 0.0000053010, 0.0050834, -0.0010323, 0.00077872, 0.00000028413, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.2, -1.2, 0.3, -0.3, -1.57, -1.57, 1.57, -1.57, 0.0, 0.0, 0.0, 0.0, 0.05, 0.05, 0.05, 0.05]
+
+# --- Manipulation (원본 R1Pro 동일, 작업 공간만 확장) ---
+manipulation:
+  n_arms: 2
+  arm_names: ["left", "right"]
+  arm_link_names:
+    left: ["left_arm_link1", "left_arm_link2", "left_arm_link3", "left_arm_link4", "left_arm_link5", "left_arm_link6", "left_arm_link7", "left_arm_link8", "left_arm_link9", "left_arm_link10", "left_arm_link11", "left_arm_link12", "left_arm_link13", "left_arm_link14", "left_arm_link15", "left_arm_link16", "left_arm_link17"]
+    right: ["right_arm_link1", "right_arm_link2", "right_arm_link3", "right_arm_link4", "right_arm_link5", "right_arm_link6", "right_arm_link7"]
+  arm_joint_names:
+    left: ["left_arm_joint1", "left_arm_joint2", "left_arm_joint3", "left_arm_joint4", "left_arm_joint5", "left_arm_joint6", "left_arm_joint7"]
+    right: ["right_arm_joint1", "right_arm_joint2", "right_arm_joint3", "right_arm_joint4", "right_arm_joint5", "right_arm_joint6", "right_arm_joint7"]
+  eef_link_names:
+    left: "left_eef_link"
+    right: "right_eef_link"
+  finger_link_names:
+    left: ["left_gripper_finger_link1", "left_gripper_finger_link2"]
+    right: ["right_gripper_finger_link1", "right_gripper_finger_link2"]
+  finger_joint_names:
+    left: ["left_gripper_finger_joint1", "left_gripper_finger_joint2"]
+    right: ["right_gripper_finger_joint1", "right_gripper_finger_joint2"]
+  gripper_link_names:
+    left: ["left_gripper_link", "left_realsense_link"]
+    right: ["right_gripper_link", "right_realsense_link"]
+  # 커스터마이징: 작업 공간 범위 확장 (원본: [-45, 45])
+  arm_workspace_range:
+    left: [-60, 60]
+    right: [-60, 60]
