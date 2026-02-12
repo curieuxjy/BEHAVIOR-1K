@@ -257,11 +257,14 @@ def main():
     if args.analyze_only:
         analyze_diff()
     elif args.register_and_run:
-        analyze_diff()
+        # register_robot()은 omnigibson을 import하지 않으므로 먼저 호출해야 합니다.
+        # analyze_diff()가 omnigibson을 import하면 REGISTERED_ROBOTS가 그 시점에 확정되므로,
+        # YAML 파일이 definitions/ 디렉토리에 먼저 존재해야 합니다.
         print(f"\n{'='*70}")
         print("  커스텀 로봇 등록")
         print(f"{'='*70}")
         register_robot()
+        analyze_diff()
         run_simulation()
     elif args.unregister:
         unregister_robot()

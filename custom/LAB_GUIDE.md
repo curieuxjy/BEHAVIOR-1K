@@ -177,12 +177,40 @@ for yaml_file in sorted(robot_config_dir.glob("*.yaml")):
 
 따라서 `r1pro_custom.yaml`을 `definitions/`에 넣으면 `"r1pro_custom"`으로 사용할 수 있습니다.
 
+### 주의사항
+
+커스텀 로봇을 만들 때 흔히 부딪히는 두 가지 문제가 있습니다:
+
+#### 1. Import 순서와 등록 타이밍
+
+`REGISTERED_ROBOTS`는 `omnigibson.robots` 모듈이 **최초 import될 때 한 번만** 구축됩니다. YAML 파일을 `definitions/`에 복사하기 **전에** omnigibson을 import하면, 이미 구축된 리스트에 새 로봇이 포함되지 않습니다. Python의 모듈 캐싱으로 인해 이후 import에서도 리스트가 갱신되지 않습니다.
+
+```
+❌ analyze_diff() → omnigibson import (REGISTERED_ROBOTS 확정) → register_robot() → 등록 실패
+✅ register_robot() → analyze_diff() → omnigibson import (r1pro_custom 포함) → 등록 성공
+```
+
+#### 2. USD 에셋 경로 (`usd_path` 필드)
+
+커스텀 로봇이 기존 로봇과 동일한 하드웨어(USD 모델)를 사용하는 경우, YAML에 `usd_path`를 명시해야 합니다. 지정하지 않으면 `robot.py`가 모델 이름으로 경로를 자동 생성하여 존재하지 않는 파일을 참조합니다:
+
+```
+기본 규칙: models/{model}/usd/{model}.usda → models/r1pro_custom/usd/r1pro_custom.usda (존재하지 않음!)
+```
+
+YAML에 아래 한 줄을 추가하면 원본 R1Pro의 USD 에셋을 공유합니다:
+
+```yaml
+usd_path: models/r1pro/usd/r1pro.usda
+```
+
 ### r1pro_custom.yaml 변경사항
 
-`custom/lab3_custom_robot/r1pro_custom.yaml`은 원본 R1Pro를 기반으로 4가지를 변경합니다:
+`custom/lab3_custom_robot/r1pro_custom.yaml`은 원본 R1Pro를 기반으로 5가지를 변경합니다:
 
 | 항목 | 원본 R1Pro | 커스텀 |
 |------|-----------|--------|
+| USD 에셋 경로 | (자동: model명 기반) | `models/r1pro/usd/r1pro.usda` (원본 공유) |
 | 기본 arm 컨트롤러 | `InverseKinematicsController` | `JointController` |
 | 선속도 게인 | 0.3 | **0.5** |
 | 각속도 게인 | 0.2 | **0.3** |
