@@ -1,0 +1,38 @@
+# =============================================================
+# Allegro Right Hand - URDF → USD 변환 설정
+# =============================================================
+# import_custom_robot.py에서 사용하는 설정 파일입니다.
+# 실행: python OmniGibson/omnigibson/examples/robots/import_custom_robot.py --config custom/lab3_custom_robot/import_allegro_right.yaml
+# =============================================================
+
+# URDF 파일 경로 (절대 경로)
+urdf_path: /home/ai5090/Documents/allegro_inhand_rotation/assets/allegro/allegro_right.urdf
+
+# 생성될 로봇 이름 (USD 출력 디렉터리명으로 사용됨)
+name: allegro_hand_right
+
+# GUI 없이 실행 (변환 후 바로 종료)
+headless: true
+
+# 기존 파일 덮어쓰기
+overwrite: true
+
+# Fixed joint 병합 여부 (tip joint 유지를 위해 false)
+merge_fixed_joints: false
+
+# --- 베이스 모션 (Allegro hand는 고정 base이므로 비활성화) ---
+base_motion:
+  use_holonomic_joints: false
+  use_sphere_wheels: false
+
+# --- 충돌 설정 ---
+collision:
+  # CoACD (Convex Approximate Convex Decomposition) 사용
+  decompose_method: coacd
+  hull_count: 32
+  # 특정 링크별 충돌 방식 지정 (빈 리스트 = 기본 coacd 적용)
+  coacd_links: []
+  convex_links: []
+  no_decompose_links: []
+  # base_link는 매우 작은 충돌 박스를 이미 가지고 있으므로 충돌 제외 가능
+  no_collision_links: []

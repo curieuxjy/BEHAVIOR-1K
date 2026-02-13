@@ -267,6 +267,96 @@ python custom/lab3_custom_robot/spawn_custom_robot.py --unregister
 - `disabled_collision_pairs`에 새 쌍을 추가/제거하고 시뮬레이션에서 충돌 확인
 - 단, `raw_controller_order`, `arm_joint_names`, `finger_joint_names` 등은 실제 USD 모델의 조인트와 일치해야 하므로 함부로 변경하면 안됩니다
 
+### 추가: Allegro 좌/우 분리 및 URDF 임포트
+
+Franka 로봇의 Allegro dexterous hand를 좌/우 분리 설정하고, URDF에서 USD를 생성하는 작업입니다.
+
+#### 1. URDF 방식 (Isaac Sim 임포터)
+
+외부 URDF 파일에서 standalone Allegro hand USD를 생성합니다:
+
+```bash
+# 오른손만
+python custom/lab3_custom_robot/run_allegro_import.py --hand right
+
+# 왼손만
+python custom/lab3_custom_robot/run_allegro_import.py --hand left
+
+# 양손 모두
+python custom/lab3_custom_robot/run_allegro_import.py --hand both
+```
+
+출력 위치: `datasets/custom_dataset/objects/robot/allegro_hand_{right,left}/usd/`
+
+#### 3. USD 시각 확인 (Isaac Sim 뷰어)
+
+변환된 USD를 Isaac Sim GUI에서 직접 확인합니다:
+
+```bash
+# 오른손 확인
+python custom/lab3_custom_robot/view_allegro_usd.py --hand right
+
+# 왼손 확인
+python custom/lab3_custom_robot/view_allegro_usd.py --hand left
+```
+
+> **주의**: `OMNIGIBSON_HEADLESS=1`을 붙이면 안 됩니다 — GUI 창이 떠야 시각적으로 볼 수 있습니다.
+
+스크립트는 OmniGibson의 `USDObject` 대신 **직접 스테이지에 USD 참조를 추가**합니다. URDF 임포터 출력의 조인트 구조(`joints` Scope)가 OG의 `entity_prim`이 기대하는 구조(링크 Xform 자식)와 다르기 때문입니다.
+
+| OG 기대 구조 | URDF 임포터 출력 |
+|-------------|-----------------|
+| `base_link/joint_0 (RevoluteJoint)` | `joints/joint_0 (RevoluteJoint)` |
+
+마우스/키보드로 카메라를 자유롭게 조작할 수 있고, `Ctrl+C`로 종료합니다.
+
+#### 4. 관절별 DOF Range 테스트
+
+각 관절을 하나씩 순차적으로 하한→상한→하한 범위를 왕복 순회하며 동작을 확인합니다:
+
+```bash
+# 오른손 관절 테스트 (기본값)
+python custom/lab3_custom_robot/test_allegro_joints.py --hand right
+
+# 왼손 관절 테스트
+python custom/lab3_custom_robot/test_allegro_joints.py --hand left
+
+# 부드럽고 자연스러운 움직임 (낮은 강성/감쇠 + 스텝 증가)
+python custom/lab3_custom_robot/test_allegro_joints.py --stiffness 200 --damping 20 --steps-per-joint 120
+
+# 빠르고 정확한 추적
+python custom/lab3_custom_robot/test_allegro_joints.py --stiffness 5000 --damping 200
+
+# force 모드 (질량 영향 받음)
+python custom/lab3_custom_robot/test_allegro_joints.py --drive-type force --stiffness 1000 --damping 100
+```
+
+**드라이브 파라미터 옵션:**
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `--drive-type` | `acceleration` | `acceleration`: 질량 무관 균일 응답, `force`: 질량 영향 |
+| `--stiffness` | 500 | P 게인 — 높을수록 타겟에 빠르게 도달 |
+| `--damping` | 50 | D 게인 — 높을수록 진동 억제, 과하면 느려짐 |
+| `--max-force` | 1000 | 드라이브 최대 토크 |
+| `--steps-per-joint` | 60 | 편도 스텝 수 — 클수록 느리고 부드러운 애니메이션 |
+
+스크립트 동작 순서:
+1. **개별 관절 순회** — 각 관절을 하한→상한→하한→중립 순서로 이동 (관절 이름, 인덱스, 각도 범위 출력)
+2. **전체 관절 웨이브** — 모든 관절을 사인파 + 위상 오프셋으로 동시에 움직이는 애니메이션 (3회)
+3. **중립 위치 리셋** — 모든 관절을 범위 중앙으로 복귀
+
+> **주의**: `view_allegro_usd.py`와 마찬가지로 GUI가 필요합니다 (`OMNIGIBSON_HEADLESS=1` 사용 불가).
+
+#### URDF 임포트 시 주의사항
+
+| 문제 | 원인 | 해결 |
+|------|------|------|
+| USD SdfPath 에러 | URDF 이름에 `.` 포함 (`link_0.0`) | 이름에서 `.` → `_` 변환 |
+| 메시 경로 오류 | `allegro_right.urdf`의 `link_12.0`에 잘못된 접두사 | `allegro/meshes/` → `meshes/` |
+| `dataset_root` 누락 | `import_custom_robot.py` 파라미터 버그 | 직접 함수 호출로 우회 |
+| 후처리 실패 | `convert_urdf_to_usd`의 child "mesh" prim 누락 | Isaac Sim 임포터 직접 호출 |
+
 ---
 
 ## Lab 4: 커스텀 로봇으로 태스크 수행
@@ -409,7 +499,13 @@ custom/
 │
 ├── lab3_custom_robot/
 │   ├── r1pro_custom.yaml                     # 커스텀 로봇 정의 (편집 대상)
-│   └── spawn_custom_robot.py                 # 등록/스폰/해제
+│   ├── spawn_custom_robot.py                 # 등록/스폰/해제
+│   ├── franka_test.yaml                      # Allegro 좌/우 분리 설정
+│   ├── run_allegro_import.py                 # URDF → USD 변환 (Isaac Sim 필요)
+│   ├── view_allegro_usd.py                   # USD 시각 확인 뷰어 (GUI 필요)
+│   ├── test_allegro_joints.py                # 관절별 DOF Range 테스트 (GUI 필요)
+│   ├── import_allegro_right.yaml             # 참고: 오른손 URDF 임포트 설정
+│   └── import_allegro_left.yaml              # 참고: 왼손 URDF 임포트 설정
 │
 └── lab4_task_integration/
     ├── custom_behavior.yaml                  # 커스텀 환경 config (편집 대상)

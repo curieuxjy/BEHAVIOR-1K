@@ -1,0 +1,223 @@
+# =============================================================
+# Franka Test: Allegro 좌/우 분리 검토용
+# =============================================================
+# 원본 franka.yaml의 allegro 단일 항목을
+# allegro_right / allegro_left로 분리한 테스트 설정입니다.
+#
+# [검토 결과 요약]
+#
+#   1. YAML 구조: 분리 가능 (supported_end_effector + end_effectors에 각각 등록)
+#   2. USD 에셋:  franka_allegro.usd 1개만 존재 (오른손)
+#                 왼손용 USD는 run_allegro_import.py로 URDF에서 변환 필요
+#   3. URDF 결합: 불가 — Allegro용 URDF 파일 자체가 없고,
+#                 not_support_urdf: true로 명시적 차단됨
+#                 (robot.py:2366에서 assert 에러 발생)
+#
+#   참고: leap_right / leap_left도 같은 상황 —
+#         YAML에는 분리 정의되어 있지만 실제 USD 파일은
+#         franka_leap.usd 하나뿐 (franka_leap_right.usd, franka_leap_left.usd 없음)
+#
+# [실행 가능 여부]
+#   allegro_right: OK (기존 franka_allegro.usd 사용)
+#   allegro_left:  OK (run_allegro_import.py로 왼손 URDF에서 변환)
+#
+# [URDF 기반 standalone Allegro USD 생성 결과]
+#   run_allegro_import.py로 URDF → USD 변환 완료:
+#   - 오른손: datasets/custom_dataset/objects/robot/allegro_hand_right/usd/allegro_hand_right.usda
+#   - 왼손:   datasets/custom_dataset/objects/robot/allegro_hand_left/usd/allegro_hand_left.usda
+#   주의: 이 USD는 standalone (Franka 팔 없이 손만) 입니다.
+#         Franka + Allegro 결합 USD가 필요한 경우 별도 조합이 필요합니다.
+#   변환 시 우회한 문제들:
+#   - URDF 이름에 '.' 포함 → USD SdfPath 에러 ('.' → '_' 변환 필요)
+#   - allegro_right.urdf link_12.0 메시 경로 접두사 오류
+#   - import_custom_robot.py의 dataset_root 파라미터 누락 버그
+#   - convert_urdf_to_usd 후처리의 child "mesh" prim 누락 문제
+#
+# =============================================================
+
+# --- USD 에셋 경로 (원본 Franka 하드웨어 공유) ---
+usd_path: models/franka/franka_panda/usd/franka_panda.usda
+
+raw_controller_order: ["arm_0", "gripper_0"]
+default_controllers:
+  arm_0: InverseKinematicsController
+  gripper_0: MultiFingerGripperController
+
+manipulation:
+  arm_link_names:
+    "0": ["panda_link0", "panda_link1", "panda_link2", "panda_link3", "panda_link4", "panda_link5", "panda_link6", "panda_link7"]
+  arm_joint_names:
+    "0": ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4", "panda_joint5", "panda_joint6", "panda_joint7"]
+
+  # --- 변경: allegro → allegro_right, allegro_left로 분리 ---
+  supported_end_effector: ["gripper", "robotiq", "allegro_right", "allegro_left", "leap_right", "leap_left", "inspire"]
+  eef_support_curobo_attached_object_link_names: ["gripper", "robotiq"]
+
+  end_effectors:
+    # === gripper (원본 동일) ===
+    gripper:
+      model: "franka_panda"
+      eef_link_names:
+        "0": "eef_link"
+      finger_link_names:
+        "0": ["panda_leftfinger", "panda_rightfinger"]
+      finger_joint_names:
+        "0": ["panda_finger_joint1", "panda_finger_joint2"]
+      default_joint_pos: [0.00, -1.3, 0.00, -2.87, 0.00, 2.00, 0.75, 0.04, 0.04]
+      teleop_rotation_offset:
+        "0": [-1, 0, 0, 0]
+      usd_path: "models/franka/franka_panda/usd/franka_panda.usda"
+      urdf_path: "models/franka/franka_panda/urdf/franka_panda.urdf"
+      curobo_path: "models/franka/franka_panda/curobo/franka_panda_description_curobo_default.yaml"
+      disabled_collision_pairs: [["panda_link5", "panda_link7"], ["panda_link5", "panda_hand"]]
+      ag_start_points: [["panda_rightfinger", [0.0, 0.001, 0.045]]]
+      ag_end_points: [["panda_leftfinger", [0.0, 0.001, 0.045]]]
+
+    # === robotiq (원본 동일) ===
+    robotiq:
+      model: "franka_robotiq"
+      gripper_control_idx: [7, 8]
+      eef_link_names:
+        "0": "eef_link"
+      finger_link_names:
+        "0": ["left_inner_finger", "right_inner_finger"]
+      finger_joint_names:
+        "0": ["left_outer_knuckle_joint", "right_outer_knuckle_joint"]
+      default_joint_pos: [0.00, -1.3, 0.00, -2.87, 0.00, 2.00, 0.00, 0.00, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      teleop_rotation_offset:
+        "0": [-1, 0, 0, 0]
+      ag_start_points: [["left_inner_finger", [0.008, 0.010, 0.0]], ["left_inner_finger", [0.008, 0.040, 0.0]]]
+      ag_end_points: [["right_inner_finger", [0.008, 0.010, 0.0]], ["right_inner_finger", [0.008, 0.040, 0.0]]]
+      usd_path: "models/franka/franka_robotiq/usd/franka_robotiq.usda"
+      urdf_path: "models/franka/franka_robotiq/urdf/franka_robotiq.urdf"
+      curobo_path: "models/franka/franka_robotiq/curobo/franka_robotiq_description_curobo_default.yaml"
+      disabled_collision_pairs:
+        - ["left_outer_knuckle", "left_outer_finger"]
+        - ["left_outer_knuckle", "left_inner_finger"]
+        - ["left_outer_knuckle", "left_inner_knuckle"]
+        - ["left_outer_knuckle", "right_outer_knuckle"]
+        - ["left_outer_knuckle", "right_outer_finger"]
+        - ["left_outer_knuckle", "right_inner_finger"]
+        - ["left_outer_knuckle", "right_inner_knuckle"]
+        - ["left_outer_finger", "left_inner_finger"]
+        - ["left_outer_finger", "left_inner_knuckle"]
+        - ["left_outer_finger", "right_outer_knuckle"]
+        - ["left_outer_finger", "right_outer_finger"]
+        - ["left_outer_finger", "right_inner_finger"]
+        - ["left_outer_finger", "right_inner_knuckle"]
+        - ["left_inner_finger", "left_inner_knuckle"]
+        - ["left_inner_finger", "right_outer_knuckle"]
+        - ["left_inner_finger", "right_outer_finger"]
+        - ["left_inner_finger", "right_inner_finger"]
+        - ["left_inner_finger", "right_inner_knuckle"]
+        - ["left_inner_knuckle", "right_outer_knuckle"]
+        - ["left_inner_knuckle", "right_outer_finger"]
+        - ["left_inner_knuckle", "right_inner_finger"]
+        - ["left_inner_knuckle", "right_inner_knuckle"]
+        - ["right_outer_knuckle", "right_outer_finger"]
+        - ["right_outer_knuckle", "right_inner_finger"]
+        - ["right_outer_knuckle", "right_inner_knuckle"]
+        - ["right_outer_finger", "right_inner_finger"]
+        - ["right_outer_finger", "right_inner_knuckle"]
+        - ["right_inner_finger", "right_inner_knuckle"]
+
+    # =================================================================
+    # allegro_right: 기존 allegro를 오른손으로 명명
+    # 상태: 실행 가능 (기존 franka_allegro.usd 사용)
+    # =================================================================
+    allegro_right:
+      model: "franka_allegro"
+      eef_link_names:
+        "0": "palm_center"
+      finger_link_names:
+        "0": ["link_0_0", "link_1_0", "link_2_0", "link_3_0", "link_4_0", "link_5_0", "link_6_0", "link_7_0", "link_8_0", "link_9_0", "link_10_0", "link_11_0", "link_12_0", "link_13_0", "link_14_0", "link_15_0"]
+      finger_joint_names:
+        "0": ["joint_12_0", "joint_13_0", "joint_14_0", "joint_15_0", "joint_8_0", "joint_9_0", "joint_10_0", "joint_11_0", "joint_4_0", "joint_5_0", "joint_6_0", "joint_7_0", "joint_0_0", "joint_1_0", "joint_2_0", "joint_3_0"]
+      default_joint_pos: [0.8600, -0.2700, -0.6800, -1.5200, -0.1800, 1.2900, 1.7200, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]
+      teleop_rotation_offset:
+        "0": [0, 0.7071, 0, 0.7071]
+      usd_path: "models/franka/franka_dexhand/franka_allegro.usd"
+      disabled_collision_pairs: [["panda_link5", "panda_link7"], ["link_12_0", "part_studio_link"]]
+      ag_start_points: [["base_link", [0.015, 0, -0.03]], ["base_link", [0.015, 0, -0.08]], ["link_15_0_tip", [0, 0.015, 0.007]]]
+      ag_end_points: [["link_3_0_tip", [0.012, 0, 0.007]], ["link_7_0_tip", [0.012, 0, 0.007]], ["link_11_0_tip", [0.012, 0, 0.007]]]
+      not_support_urdf: true
+
+    # =================================================================
+    # allegro_left: 왼손 Allegro
+    # 상태: USD 생성 완료
+    #   run_allegro_import.py로 왼손 URDF에서 변환 (standalone)
+    #   → datasets/custom_dataset/objects/robot/allegro_hand_left/usd/allegro_hand_left.usda
+    #   Franka 팔 결합이 필요한 경우 별도 조합 필요
+    # =================================================================
+    allegro_left:
+      model: "franka_allegro_left"
+      eef_link_names:
+        "0": "palm_center"
+      finger_link_names:
+        "0": ["link_0_0", "link_1_0", "link_2_0", "link_3_0", "link_4_0", "link_5_0", "link_6_0", "link_7_0", "link_8_0", "link_9_0", "link_10_0", "link_11_0", "link_12_0", "link_13_0", "link_14_0", "link_15_0"]
+      finger_joint_names:
+        "0": ["joint_12_0", "joint_13_0", "joint_14_0", "joint_15_0", "joint_8_0", "joint_9_0", "joint_10_0", "joint_11_0", "joint_4_0", "joint_5_0", "joint_6_0", "joint_7_0", "joint_0_0", "joint_1_0", "joint_2_0", "joint_3_0"]
+      default_joint_pos: [0.8600, -0.2700, -0.6800, -1.5200, -0.1800, 1.2900, 1.7200, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]
+      # 왼손 텔레옵 회전 오프셋
+      teleop_rotation_offset:
+        "0": [0, -0.7071, 0, 0.7071]
+      usd_path: "models/franka/franka_dexhand/franka_allegro_left.usd"
+      disabled_collision_pairs: [["panda_link5", "panda_link7"], ["link_12_0", "part_studio_link"]]
+      # TODO: 왼손 모델에 맞게 좌표 조정 필요
+      ag_start_points: [["base_link", [0.015, 0, 0.03]], ["base_link", [0.015, 0, 0.08]], ["link_15_0_tip", [0, -0.015, 0.007]]]
+      ag_end_points: [["link_3_0_tip", [0.012, 0, -0.007]], ["link_7_0_tip", [0.012, 0, -0.007]], ["link_11_0_tip", [0.012, 0, -0.007]]]
+      not_support_urdf: true
+
+    # === leap_right (원본 동일) ===
+    leap_right:
+      model: "franka_leap_right"
+      eef_link_names:
+        "0": "palm_center"
+      finger_link_names:
+        "0": ["mcp_joint_1", "pip_1", "dip_1", "fingertip_1", "realtip_1", "mcp_joint_2", "pip_2", "dip_2", "fingertip_2", "realtip_2", "mcp_joint_3", "pip_3", "dip_3", "fingertip_3", "realtip_3", "mcp_joint_4", "pip_4", "dip_4", "fingertip_4", "realtip_4"]
+      finger_joint_names:
+        "0": ["finger_joint_12", "finger_joint_13", "finger_joint_14", "finger_joint_15", "finger_joint_1", "finger_joint_0", "finger_joint_2", "finger_joint_3", "finger_joint_5", "finger_joint_4", "finger_joint_6", "finger_joint_7", "finger_joint_9", "finger_joint_8", "finger_joint_10", "finger_joint_11"]
+      default_joint_pos: [0.8600, -0.2700, -0.6800, -1.5200, -0.1800, 1.2900, 1.7200, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]
+      teleop_rotation_offset:
+        "0": [-0.7071, 0.7071, 0, 0]
+      usd_path: "models/franka/franka_dexhand/franka_leap_right.usd"
+      disabled_collision_pairs: [["panda_link5", "panda_link7"]]
+      ag_start_points: [["palm_center", [0, -0.025, 0.035]], ["palm_center", [0, 0.03, 0.035]], ["fingertip_4", [-0.0115, -0.07, -0.015]]]
+      ag_end_points: [["fingertip_1", [-0.0115, -0.06, 0.015]], ["fingertip_2", [-0.0115, -0.06, 0.015]], ["fingertip_3", [-0.0115, -0.06, 0.015]]]
+      not_support_urdf: true
+
+    # === leap_left (원본 동일) ===
+    leap_left:
+      model: "franka_leap_left"
+      eef_link_names:
+        "0": "palm_center"
+      finger_link_names:
+        "0": ["mcp_joint_1", "pip_1", "dip_1", "fingertip_1", "realtip_1", "mcp_joint_2", "pip_2", "dip_2", "fingertip_2", "realtip_2", "mcp_joint_3", "pip_3", "dip_3", "fingertip_3", "realtip_3", "mcp_joint_4", "pip_4", "dip_4", "fingertip_4", "realtip_4"]
+      finger_joint_names:
+        "0": ["finger_joint_12", "finger_joint_13", "finger_joint_14", "finger_joint_15", "finger_joint_1", "finger_joint_0", "finger_joint_2", "finger_joint_3", "finger_joint_5", "finger_joint_4", "finger_joint_6", "finger_joint_7", "finger_joint_9", "finger_joint_8", "finger_joint_10", "finger_joint_11"]
+      default_joint_pos: [0.8600, -0.2700, -0.6800, -1.5200, -0.1800, 1.2900, 1.7200, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]
+      teleop_rotation_offset:
+        "0": [-0.7071, 0.7071, 0, 0]
+      usd_path: "models/franka/franka_dexhand/franka_leap_left.usd"
+      disabled_collision_pairs: [["panda_link5", "panda_link7"]]
+      ag_start_points: [["palm_center", [0, -0.025, 0.035]], ["palm_center", [0, 0.03, 0.035]], ["fingertip_4", [-0.0115, -0.07, -0.015]]]
+      ag_end_points: [["fingertip_1", [-0.0115, -0.06, 0.015]], ["fingertip_2", [-0.0115, -0.06, 0.015]], ["fingertip_3", [-0.0115, -0.06, 0.015]]]
+      not_support_urdf: true
+
+    # === inspire (원본 동일) ===
+    inspire:
+      model: "franka_inspire"
+      eef_link_names:
+        "0": "palm_center"
+      finger_link_names:
+        "0": ["link11", "link12", "link13", "link14", "link21", "link22", "link31", "link32", "link41", "link42", "link51", "link52"]
+      finger_joint_names:
+        "0": ["joint11", "joint12", "joint13", "joint14", "joint21", "joint22", "joint31", "joint32", "joint41", "joint42", "joint51", "joint52"]
+      default_joint_pos: [0.6520, -0.2710, -0.6220, -2.7360, -0.2630, 2.4970, 1.0450, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]
+      teleop_rotation_offset:
+        "0": [0, 0, 0.707, 0.707]
+      usd_path: "models/franka/franka_dexhand/franka_inspire.usd"
+      disabled_collision_pairs: [["panda_link5", "panda_link7"], ["base_link", "link12"]]
+      ag_start_points: [["base_link", [-0.025, -0.07, 0.012]], ["base_link", [-0.015, -0.11, 0.012]], ["link14", [-0.01, 0.015, 0.004]]]
+      ag_end_points: [["link22", [0.006, 0.04, 0.003]], ["link32", [0.006, 0.045, 0.003]], ["link42", [0.006, 0.04, 0.003]], ["link52", [0.006, 0.04, 0.003]]]
+      not_support_urdf: true
