@@ -189,15 +189,50 @@ def sanitize_all_names(root):
     return fixed
 
 
+def fix_right_hand_inertials(root):
+    """Right hand의 link_4_0, link_8_0 inertial을 left hand 값으로 맞춥니다.
+
+    allegro_right.urdf의 link_4.0 mass=0.0119 vs allegro_left.urdf의 0.005
+    이 차이가 default 자세에서 index finger 비대칭을 일으킵니다.
+    """
+    patches = {
+        "right_link_4_0": {"mass": "0.005",
+                           "inertia": {"ixx": "5.1458e-05", "iyy": "5.1458e-05", "izz": "6.125e-05",
+                                       "ixy": "0", "ixz": "0", "iyz": "0"}},
+        "right_link_8_0": {"mass": "0.005",
+                           "inertia": {"ixx": "5.1458e-05", "iyy": "5.1458e-05", "izz": "6.125e-05",
+                                       "ixy": "0", "ixz": "0", "iyz": "0"}},
+    }
+    patched = 0
+    for link in root.findall("link"):
+        name = link.get("name")
+        if name not in patches:
+            continue
+        p = patches[name]
+        inertial = link.find("inertial")
+        if inertial is None:
+            continue
+        mass_elem = inertial.find("mass")
+        if mass_elem is not None:
+            mass_elem.set("value", p["mass"])
+        inertia_elem = inertial.find("inertia")
+        if inertia_elem is not None:
+            for k, v in p["inertia"].items():
+                inertia_elem.set(k, v)
+        patched += 1
+        print(f"    {name}: mass → {p['mass']}, inertia patched")
+    return patched
+
+
 def add_mount_joint(root, side):
     """arm_link7 → allegro_base_link 고정 조인트를 URDF에 추가합니다."""
     joint = ET.SubElement(root, "joint",
                           name=f"{side}_allegro_mount_joint", type="fixed")
     ET.SubElement(joint, "parent", link=f"{side}_arm_link7")
     ET.SubElement(joint, "child", link=f"{side}_allegro_base_link")
-    # X축 기준 180° 회전 (π rad) — 손 방향을 gripper와 일치시킴
-    ET.SubElement(joint, "origin", xyz=MOUNT_OFFSET_XYZ, rpy="3.14159265 0 0")
-    print(f"    {side}: {side}_arm_link7 → {side}_allegro_base_link  xyz={MOUNT_OFFSET_XYZ} rpy=π,0,0")
+    # X축 180° + Z축 180° 회전 — 손 방향을 gripper와 일치시킴
+    ET.SubElement(joint, "origin", xyz=MOUNT_OFFSET_XYZ, rpy="3.14159265 0 3.14159265")
+    print(f"    {side}: {side}_arm_link7 → {side}_allegro_base_link  xyz={MOUNT_OFFSET_XYZ} rpy=π,0,π")
 
 
 # ========================================================================
@@ -410,6 +445,10 @@ def build_combined_urdf(work_dir):
     print(f"\n[Step 4] 마운트 조인트 추가")
     for side in ["left", "right"]:
         add_mount_joint(root, side)
+
+    # --- Step 4.5: Right hand inertial 패치 ---
+    print(f"\n[Step 4.5] Right hand inertial 패치 (left와 동일하게)")
+    fix_right_hand_inertials(root)
 
     # --- Step 5: 메시 파일 복사 ---
     print(f"\n[Step 5] 메시 파일 복사")

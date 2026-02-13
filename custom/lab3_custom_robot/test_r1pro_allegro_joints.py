@@ -223,12 +223,22 @@ def main():
             if lower is None or upper is None:
                 continue
 
+            # Higher gains for trunk joints (heavy upper body)
+            if category == "trunk":
+                stiff = args.stiffness * 100
+                damp = args.damping * 20
+                max_f = args.max_force * 10
+            else:
+                stiff = args.stiffness
+                damp = args.damping
+                max_f = args.max_force
+
             # Add position drive (PD controller)
             drive = UsdPhysics.DriveAPI.Apply(child, "angular")
             drive.CreateTypeAttr().Set(args.drive_type)
-            drive.CreateMaxForceAttr().Set(args.max_force)
-            drive.CreateStiffnessAttr().Set(args.stiffness)
-            drive.CreateDampingAttr().Set(args.damping)
+            drive.CreateMaxForceAttr().Set(max_f)
+            drive.CreateStiffnessAttr().Set(stiff)
+            drive.CreateDampingAttr().Set(damp)
             drive.CreateTargetPositionAttr().Set(0.0)
 
             all_joints[category].append({
@@ -279,18 +289,38 @@ def main():
         orientation_wxyz=(0.82, 0.35, 0.1, 0.44),
     )
 
+    # --- Collect ALL joints (not just test targets) for default hold ---
+    all_joint_list = []
+    for cat in CATEGORIES:
+        all_joint_list.extend(all_joints[cat])
+
+    # Default position = 0.0 (clamp to joint range if 0 is outside)
+    DEFAULT_POS = 0.0
+    for j in all_joint_list:
+        j["default"] = max(j["lower"], min(DEFAULT_POS, j["upper"]))
+
+    def get_drive(joint):
+        jp = stage.GetPrimAtPath(joint["prim_path"])
+        return UsdPhysics.DriveAPI.Get(jp, "angular")
+
+    def hold_all_default():
+        """Set ALL joints to their default position."""
+        for j in all_joint_list:
+            get_drive(j).GetTargetPositionAttr().Set(j["default"])
+
     # --- Start simulation ---
+    # Set all joints to default BEFORE play
+    hold_all_default()
     og.sim.play()
-    for _ in range(30):
+
+    # Settle into default pose
+    print("  Settling into default pose...")
+    for _ in range(60):
         og.sim.step()
 
     steps_per_joint = args.steps_per_joint
     print(f"\n  {steps_per_joint} steps per joint (one-way), round-trip sweep")
     print(f"  Ctrl+C to quit\n")
-
-    def get_drive(joint):
-        jp = stage.GetPrimAtPath(joint["prim_path"])
-        return UsdPhysics.DriveAPI.Get(jp, "angular")
 
     try:
         # --- Sequential joint test ---
@@ -298,10 +328,11 @@ def main():
             name = joint["name"]
             lower = joint["lower"]
             upper = joint["upper"]
+            default = joint["default"]
 
             print(f"  [{j_idx + 1:2d}/{len(test_joints)}] {name:30s}  ", end="", flush=True)
 
-            # lower -> upper
+            # lower -> upper (only this joint moves, others hold default)
             for step in range(steps_per_joint):
                 frac = step / max(steps_per_joint - 1, 1)
                 target = lower + frac * (upper - lower)
@@ -317,13 +348,12 @@ def main():
                 get_drive(joint).GetTargetPositionAttr().Set(target)
                 og.sim.step()
 
-            # Reset to center
-            center = (lower + upper) / 2.0
-            get_drive(joint).GetTargetPositionAttr().Set(center)
+            # Reset this joint back to default
+            get_drive(joint).GetTargetPositionAttr().Set(default)
             for _ in range(10):
                 og.sim.step()
 
-            print(f"-> center {center:.1f}  OK")
+            print(f"-> default {default:.1f}  OK")
 
         # --- Wave animation (all tested joints simultaneously) ---
         print(f"\n  Wave animation ({len(test_joints)} joints)...")
@@ -340,10 +370,8 @@ def main():
                     get_drive(joint).GetTargetPositionAttr().Set(val)
                 og.sim.step()
 
-        # --- Reset all to center ---
-        for joint in test_joints:
-            center = (joint["lower"] + joint["upper"]) / 2.0
-            get_drive(joint).GetTargetPositionAttr().Set(center)
+        # --- Reset ALL joints to default ---
+        hold_all_default()
         for _ in range(30):
             og.sim.step()
 
